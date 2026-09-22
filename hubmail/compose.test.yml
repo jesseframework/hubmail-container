@@ -1,0 +1,43 @@
+# Local smoke-test stack for the HubMail core image (throwaway data, test passwords).
+#   docker compose -f hubmail/compose.test.yml up -d --build
+#   admin UI: https://localhost:9443  (admin / hubmail-test)
+name: hubmail-test
+
+services:
+  gromox-db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: Lu3s3WmFxXghtLwJnuqN
+      MARIADB_DATABASE: grommunio
+      MARIADB_USER: grommunio
+      MARIADB_PASSWORD: Lu3s3WmFxXghtLwJnuqN
+    healthcheck:
+      test: mariadb --host=localhost --user=$${MARIADB_USER} --password=$${MARIADB_PASSWORD} -e 'SELECT 1;'
+      interval: 10s
+      retries: 10
+
+  chat-db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: Lu3s3WmFxXghtLwJnuqN
+      MARIADB_DATABASE: grochat
+      MARIADB_USER: grochat
+      MARIADB_PASSWORD: grommunio
+    healthcheck:
+      test: mariadb --host=localhost --user=$${MARIADB_USER} --password=$${MARIADB_PASSWORD} -e 'SELECT 1;'
+      interval: 10s
+      retries: 10
+
+  hubmail-core:
+    image: ${HUBMAIL_IMAGE:-hubmail-core:local}
+    build:
+      context: ..
+      dockerfile: gromox-core/Dockerfile
+    platform: linux/amd64
+    env_file: test.env
+    ports:
+      - "9443:9443"   # admin UI
+      - "8443:8443"   # webmail
+    depends_on:
+      gromox-db: {condition: service_healthy}
+      chat-db: {condition: service_healthy}
