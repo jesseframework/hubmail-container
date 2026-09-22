@@ -111,4 +111,10 @@ DEPLOY
   echo "0 */12 * * * root certbot renew --quiet --standalone --http-01-port 8080 --pre-hook 'supervisorctl stop nginx' --deploy-hook /usr/local/bin/grommunio-cert-deploy --post-hook 'supervisorctl start nginx'" > /etc/cron.d/certbot-renew
 fi
 
+# ── Runtime directories ───────────────────────────────────────────
+# /run is empty on every container start and there is no systemd to create the
+# packages' runtime dirs (/run/gromox, /run/grommunio, /run/php-fpm, ...).
+# Without them admin-api, php-fpm, zcore and delivery cannot bind their sockets.
+systemd-tmpfiles --create /usr/lib/tmpfiles.d/*gromox*.conf /usr/lib/tmpfiles.d/*grommunio*.conf /usr/lib/tmpfiles.d/php-fpm.conf 2>/dev/null || true
+
 exec /usr/local/bin/supervisord -n -c /etc/supervisord.conf
