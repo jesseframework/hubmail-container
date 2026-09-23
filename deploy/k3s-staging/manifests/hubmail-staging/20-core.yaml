@@ -60,10 +60,10 @@ spec:
                     values: [boca-k3-app-node1, boca-k3-app-node2, boca-k3-app-node3]
       containers:
         - name: core
-          # Must be a build that includes hubmail-container PR "phase 2 k3s staging"
-          # (RECONFIGURE_EACH_BOOT, data seeding). Set to that merge's sha- tag once CI
-          # publishes it; never :latest.
-          image: ghcr.io/jesseframework/hubmail-core:SET-AFTER-PHASE2-MERGE
+          # Built natively on .80 from master ebad08d, pushed to GHCR 2026-09-22.
+          # Pinned by digest (immutable); ghcr.io/jesseframework/hubmail-core:sha-ebad08d
+          # is the same image.
+          image: ghcr.io/jesseframework/hubmail-core@sha256:1c5dce646d28b01d56ce606fc1d5b77ed05516b852c5819d88b0e0c7a3dfb300
           envFrom:
             - configMapRef: {name: hubmail-config}
             - secretRef: {name: hubmail-secrets}
