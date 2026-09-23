@@ -1,0 +1,49 @@
+# Edge routing for the HubMail staging UI via the Cloudflare tunnel -> Traefik (:web).
+# Webmail (grommunio-web) nginx forces HTTP->HTTPS, so Traefik must speak HTTPS to the pod
+# (grommunio's own self-signed cert -> insecureSkipVerify). The admin UI serves plain HTTP
+# on :9080, so it uses the standard xfp-https pattern like the other sites.
+# The tunnel hostname->Traefik mapping is added in the Cloudflare Zero-Trust dashboard
+# (this tunnel is token/dashboard-managed), same target as the other k3s sites.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: xfp-https, namespace: hubmail-staging}
+spec: {headers: {customRequestHeaders: {X-Forwarded-Proto: "https"}}}
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata: {name: grommunio-tls, namespace: hubmail-staging}
+spec:
+  serverName: mail-staging.hostzones.net
+  insecureSkipVerify: true
+---
+# Webmail: https backend (grommunio-web on :443 -> pod :8443)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: {name: hubmail-webmail, namespace: hubmail-staging}
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Host(`mail-staging.hostzones.net`)
+      kind: Rule
+      services:
+        - name: hubmail-core
+          port: 443
+          scheme: https
+          serversTransport: grommunio-tls
+          passHostHeader: true
+---
+# Admin UI: http backend (grommunio-admin on :9080), xfp-https so it builds https links
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: {name: hubmail-admin, namespace: hubmail-staging}
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Host(`admin-staging.hostzones.net`)
+      kind: Rule
+      middlewares:
+        - {name: xfp-https}
+      services:
+        - name: hubmail-core
+          port: 9080
+          passHostHeader: true

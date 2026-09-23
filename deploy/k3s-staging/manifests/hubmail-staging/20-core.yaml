@@ -129,6 +129,7 @@ spec:
   ports:
     - {name: https, port: 443, targetPort: 8443}
     - {name: admin, port: 9443, targetPort: 9443}
+    - {name: http-admin, port: 9080, targetPort: 9080}
     - {name: smtp, port: 25, targetPort: 2525}
     - {name: submission, port: 587, targetPort: 2587}
     - {name: smtps, port: 465, targetPort: 2465}
