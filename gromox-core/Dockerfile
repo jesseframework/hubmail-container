@@ -70,6 +70,11 @@ COPY --from=hubmail-admin-api /src/tools /usr/share/grommunio-admin-api/tools
 COPY --from=hubmail-admin-api /src/main.py /usr/share/grommunio-admin-api/main.py
 COPY --from=hubmail-admin-api /src/.hubmail-commit /etc/hubmail/admin-api.commit
 
+# Browsers can send >4 KiB of headers (cookies); uWSGI's default 4096-byte buffer
+# then resets the connection and the admin UI shows "Could not connect to backend".
+RUN grep -q '^buffer-size' /usr/share/grommunio-admin-api/api-config.ini || \
+    sed -i '/^\[uwsgi\]/a buffer-size = 32768' /usr/share/grommunio-admin-api/api-config.ini
+
 # Record the exact grommunio package versions baked into this image; the
 # community repo only serves the latest build, so this is our version record.
 RUN mkdir -p /etc/hubmail && \
