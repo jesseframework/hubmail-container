@@ -38,7 +38,13 @@ memory_check
 
 # Set repository credentials directly
 # shellcheck source=common/repo
-INSTALLVALUE="core, chat"
+# HubMail: chat is optional. Its setup drops and recreates the chat database on every run,
+# so leave it off wherever setup re-runs on each boot (k3s).
+if [ "${ENABLE_CHAT:-true}" = "true" ]; then
+  INSTALLVALUE="core, chat"
+else
+  INSTALLVALUE="core"
+fi
 
 X500_FILE="/etc/gromox/.x500_org"
 if [ -n "${X500}" ]; then
@@ -58,6 +64,13 @@ if [ "${SSL_INSTALL_TYPE}" = "0" ]; then
   if ! selfcert; then
   touch ssle
   fi
+elif [ "${SSL_INSTALL_TYPE}" = "3" ]; then
+  # HubMail: certificate provided by the platform (k3s: a cert-manager Secret mounted at
+  # ${SSL_PROVIDED_DIR:-/etc/hubmail/tls} with tls.crt = cert + chain, tls.key).
+  SSL_PROVIDED_DIR="${SSL_PROVIDED_DIR:-/etc/hubmail/tls}"
+  cp -f "${SSL_PROVIDED_DIR}/tls.crt" "${SSL_BUNDLE_T}"
+  cp -f "${SSL_PROVIDED_DIR}/tls.key" "${SSL_KEY_T}"
+  chmod 0640 "${SSL_KEY_T}"
 elif [ "${SSL_INSTALL_TYPE}" = "2" ]; then
   #choose_ssl_letsencrypt
   #this should containe the domain to signed by certbot

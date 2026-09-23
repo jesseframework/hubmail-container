@@ -1,0 +1,17 @@
+# LinstorCluster + storage pools + the hubmail-replicated StorageClass (manifests/piraeus).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: piraeus
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea_admin/gitops.git
+    targetRevision: HEAD
+    path: manifests/piraeus
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: piraeus-datastore
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}

@@ -1,0 +1,19 @@
+# Two synchronous DRBD copies on different db nodes; LINSTOR adds a diskless tiebreaker on
+# the third, so a volume keeps quorum through one node loss. Retain: deleting a PVC never
+# deletes mail. The DRBD options are the ones the Piraeus HA controller needs for failover.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hubmail-replicated
+provisioner: linstor.csi.linbit.com
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  linstor.csi.linbit.com/storagePool: hubmail-thin
+  linstor.csi.linbit.com/placementCount: "2"
+  csi.storage.k8s.io/fstype: xfs
+  property.linstor.csi.linbit.com/DrbdOptions/auto-quorum: io-error
+  property.linstor.csi.linbit.com/DrbdOptions/Resource/on-no-data-accessible: suspend-io
+  property.linstor.csi.linbit.com/DrbdOptions/Resource/on-suspended-primary-outdated: force-secondary
+  property.linstor.csi.linbit.com/DrbdOptions/Net/rr-conflict: retry-connect

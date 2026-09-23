@@ -1,0 +1,62 @@
+# Nightly off-site backups to Wasabi (same bucket/credentials as the other k3s backups):
+#   s3://$BACKUP_S3_BUCKET/hubmail-staging/db/<UTC stamp>/grommunio.sql.gz   (this CronJob)
+#   s3://$BACKUP_S3_BUCKET/hubmail-staging/mail/<UTC stamp>/gromox.tar.gz    (mail-backup sidecar in 20-core.yaml, script in 40-mail-backup.yaml)
+# 14 runs kept for each.
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: db-backup, namespace: hubmail-staging}
+spec:
+  schedule: "30 3 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
+      template:
+        metadata: {labels: {app: hubmail-db-backup}}
+        spec:
+          restartPolicy: Never
+          enableServiceLinks: false
+          initContainers:
+            - name: dump
+              image: mariadb:11.4.9
+              env:
+                - name: MYSQL_PWD
+                  valueFrom: {secretKeyRef: {name: hubmail-db-credentials, key: password}}
+              command: ["bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  mariadb-dump -h hubmail-db-primary -u grommunio --single-transaction --quick \
+                    --routines --triggers grommunio | gzip > /out/grommunio.sql.gz
+                  test "$(gzip -dc /out/grommunio.sql.gz | grep -c 'CREATE TABLE')" -gt 10
+                  echo "dump: $(du -h /out/grommunio.sql.gz | cut -f1)"
+              volumeMounts: [{name: out, mountPath: /out}]
+              resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 512Mi}}
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.36.45
+              envFrom: [{secretRef: {name: backup-s3}}]
+              env: [{name: AWS_DEFAULT_REGION, value: us-east-1}]
+              command: ["bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+                  EP="$BACKUP_S3_ENDPOINT"; case "$EP" in http*) ;; *) EP="https://$EP" ;; esac
+                  BASE="s3://$BACKUP_S3_BUCKET/hubmail-staging/db"
+                  DEST="$BASE/$(date -u +%Y%m%d-%H%M%S)"
+                  cd /out && sha256sum grommunio.sql.gz > SHA256SUMS
+                  aws --endpoint-url "$EP" s3 cp /out/ "$DEST/" --recursive --only-show-errors
+                  aws --endpoint-url "$EP" s3 ls "$BASE/" | awk '/PRE/ {print $2}' | sort | head -n -14 | while read -r old; do
+                    aws --endpoint-url "$EP" s3 rm "$BASE/$old" --recursive --only-show-errors || echo "could not prune $old"
+                  done
+                  echo "backup complete: $DEST"
+              volumeMounts: [{name: out, mountPath: /out}]
+              resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 512Mi}}
+          volumes:
+            - {name: out, emptyDir: {sizeLimit: 2Gi}}

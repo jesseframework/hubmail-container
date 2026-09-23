@@ -14,6 +14,16 @@ if [ -n "${TIMEZONE}" ] && [ -f "/usr/share/zoneinfo/${TIMEZONE}" ]; then
   echo "${TIMEZONE}" > /etc/timezone
 fi
 
+# HubMail: restore the package layout into any empty data directory (fresh k3s volume).
+for seed in /usr/share/hubmail/seed/*.tar; do
+  [ -f "$seed" ] || continue
+  dir="/$(basename "$seed" .tar | tr _ /)"
+  if [ -d "$dir" ] && [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+    echo "Seeding empty ${dir} from image"
+    tar -C / -xpf "$seed"
+  fi
+done
+
 # Use persistent marker directory (survives restarts with volumes)
 MARKER_DIR="/etc/gromox/.setup"
 mkdir -p "${MARKER_DIR}"
@@ -30,6 +40,18 @@ for i in $(seq 1 30); do
   echo "  attempt $i/30 - retrying in 2s..."
   sleep 2
 done
+
+# HubMail: with RECONFIGURE_EACH_BOOT=true, configuration is regenerated from the
+# environment on every start (k3s pods get a fresh filesystem, so a persisted "done"
+# marker would skip setup and leave postfix/admin-api unconfigured). Requires a fixed
+# X500 value: it is written into every mailbox store's address-book entries.
+if [ "${RECONFIGURE_EACH_BOOT}" = "true" ]; then
+  if [ -z "${X500}" ]; then
+    echo "FATAL: RECONFIGURE_EACH_BOOT=true needs a fixed X500 (e.g. X500=i6512a3f0)" >&2
+    exit 1
+  fi
+  rm -f "${MARKER_DIR}/db_done" "${MARKER_DIR}/entry_done"
+fi
 
 # Run DB initialization (once)
 if [ ! -f "${MARKER_DIR}/db_done" ]; then
@@ -85,7 +107,7 @@ fi
 # ── Conditional services ──────────────────────────────────────────
 
 # Enable grommunio-chat if configured (check for chat config file existence)
-if [ -f "${CHAT_CONFIG}" ] && [ -f /etc/supervisor.d/grommunio-chat.conf ]; then
+if [ "${ENABLE_CHAT:-true}" = "true" ] && [ -f "${CHAT_CONFIG}" ] && [ -f /etc/supervisor.d/grommunio-chat.conf ]; then
   sed -i 's/autostart=false/autostart=true/' /etc/supervisor.d/grommunio-chat.conf
 fi
 

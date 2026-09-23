@@ -1,0 +1,40 @@
+# mariadb-operator: runs the Galera cluster that holds the grommunio directory (orgs, domains, users).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mariadb-operator-crds
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://helm.mariadb.com/mariadb-operator
+    chart: mariadb-operator-crds
+    targetRevision: 26.10.1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mariadb-operator
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mariadb-operator
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://helm.mariadb.com/mariadb-operator
+    chart: mariadb-operator
+    targetRevision: 26.10.1
+    helm:
+      valuesObject:
+        crds: {enabled: false}
+        metrics: {enabled: true, serviceMonitor: {enabled: true}}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mariadb-operator
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

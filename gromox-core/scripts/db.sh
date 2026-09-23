@@ -14,7 +14,7 @@ echo "mysql_host=$MYSQL_HOST" >> /etc/gromox/mysql_adaptor.cfg
 if [[ $HAS_TABLES =~ "false" ]]; then
 	echo 'Gromox DB is not populated, populating it...' >>"$LOGFILE" 2>&1
 	gromox-dbop -C >>"$LOGFILE" 2>&1
-elif [[ $CLEAR_DBS = true ]]; then
+elif [[ $CLEAR_DBS = true && $CLEAR_DBS_CONFIRM = "drop-all-mail-accounts" ]]; then
 	echo 'Creating new gromox DB...' >>"$LOGFILE" 2>&1
 	echo "${MYSQL_ROOT_PASS}" > /home/gromox_root_pass 2>&1
       echo "drop database if exists ${MYSQL_DB}; \
@@ -24,6 +24,9 @@ elif [[ $CLEAR_DBS = true ]]; then
 
 	gromox-dbop -C >>"$LOGFILE" 2>&1
 else
-	echo 'Gromox DB is popoulated. Skipping' >>"$LOGFILE" 2>&1
+	# HubMail: CLEAR_DBS=true alone no longer drops a populated database. Setup may re-run on
+	# every boot (k3s pods start with a fresh filesystem), and a drop here deletes every
+	# domain and user. Dropping also needs CLEAR_DBS_CONFIRM=drop-all-mail-accounts.
+	echo 'Gromox DB is populated. Skipping' >>"$LOGFILE" 2>&1
 fi
 
