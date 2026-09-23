@@ -139,4 +139,14 @@ fi
 # Without them admin-api, php-fpm, zcore and delivery cannot bind their sockets.
 systemd-tmpfiles --create /usr/lib/tmpfiles.d/*gromox*.conf /usr/lib/tmpfiles.d/*grommunio*.conf /usr/lib/tmpfiles.d/php-fpm.conf 2>/dev/null || true
 
+# HubMail: point grommunio Meet (grommunio-web plugin) at the configured Jitsi and
+# enable it. MEET_SERVER is the Jitsi base URL (trailing slash); default keeps the
+# package behaviour (local /meet/). Runs each boot (config-meet.php is an image file).
+if [ -n "${MEET_SERVER}" ] && [ -f /etc/grommunio-web/config-meet.php ]; then
+  sed -i "s#'server' => .*#'server' => '${MEET_SERVER}',#" /etc/grommunio-web/config-meet.php
+  if [ "${MEET_ENABLE:-true}" = "true" ]; then
+    sed -i "s#// 'enable' => true,#'enable' => true,#" /etc/grommunio-web/config-meet.php
+  fi
+fi
+
 exec /usr/local/bin/supervisord -n -c /etc/supervisord.conf
