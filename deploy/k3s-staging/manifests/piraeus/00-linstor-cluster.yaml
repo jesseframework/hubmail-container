@@ -1,0 +1,37 @@
+# LINSTOR satellites on the six workers (not the control plane). Storage lives only on the
+# three db nodes; app nodes attach volumes diskless over DRBD, so a mailbox pod can run
+# on any worker. The HA controller (on by default) evicts a pod whose volume lost quorum,
+# so a dead node's mailbox pod restarts elsewhere without manual force-deletion.
+apiVersion: piraeus.io/v1
+kind: LinstorCluster
+metadata:
+  name: linstorcluster
+spec:
+  nodeAffinity:
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values: [boca-k3-app-node1, boca-k3-app-node2, boca-k3-app-node3,
+                     boca-k3-db-node1, boca-k3-db-node2, boca-k3-db-node3]
+---
+# PREREQUISITE (host step, once per db node, before this syncs):
+#   lvcreate -L 30G -T ubuntu-vg/hubmail-thin
+# Staging only: ubuntu-vg has ~38 GiB free per node. Production gets a dedicated disk per
+# db node instead (replace lvmThinPool with a `source: {hostDevices: [/dev/sdc]}` pool).
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: hubmail-storage
+spec:
+  nodeAffinity:
+    nodeSelectorTerms:
+      - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values: [boca-k3-db-node1, boca-k3-db-node2, boca-k3-db-node3]
+  storagePools:
+    - name: hubmail-thin
+      lvmThinPool:
+        volumeGroup: ubuntu-vg
+        thinPool: hubmail-thin

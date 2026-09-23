@@ -1,0 +1,136 @@
+# HubMail core (all grommunio services in one pod, phase 2a). Config is regenerated from
+# this ConfigMap + hubmail-secrets on every start (RECONFIGURE_EACH_BOOT); only data lives
+# on the replicated volume. The per-role split (MX / front / store shards) is phase 2b.
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: hubmail-config, namespace: hubmail-staging}
+data:
+  FQDN: mail-staging.hostzones.com
+  ORIGFQDN: mail-staging.hostzones.com
+  DOMAIN: hostzones.com
+  ORIGDOMAIN: hostzones.com
+  ORGANIZATION: HubMail
+  TIMEZONE: America/Jamaica
+  MYSQL_HOST: hubmail-db-primary
+  MYSQL_USER: grommunio
+  MYSQL_DB: grommunio
+  RELAYHOST: ""
+  RECONFIGURE_EACH_BOOT: "true"
+  X500: i6ab33865          # fixed forever: written into every mailbox's address-book entries
+  CLEAR_DBS: "false"
+  ENABLE_CHAT: "false"
+  ENABLE_ARCHIVE: "false"
+  ENABLE_OFFICE: "false"
+  ENABLE_FILES: "false"
+  ENABLE_KEYCLOAK: "false"
+  SSL_INSTALL_TYPE: "0"         # staging: self-signed. Production: "3" + cert-manager Secret
+  SSL_COUNTRY: JM
+  SSL_STATE: Kingston
+  SSL_LOCALITY: Kingston
+  SSL_ORG: HubMail
+  SSL_OU: IT
+  SSL_DAYS: "365"
+  LOGFILE: /var/log/grommunio-setup.log
+  CHAT_CONFIG: /etc/grommunio-chat/config.json
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hubmail-core
+  namespace: hubmail-staging
+spec:
+  serviceName: hubmail-core
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  selector: {matchLabels: {app: hubmail-core}}
+  template:
+    metadata:
+      labels: {app: hubmail-core}
+    spec:
+      enableServiceLinks: false
+      imagePullSecrets: [{name: ghcr-pull}]
+      terminationGracePeriodSeconds: 60
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: [boca-k3-app-node1, boca-k3-app-node2, boca-k3-app-node3]
+      containers:
+        - name: core
+          # Must be a build that includes hubmail-container PR "phase 2 k3s staging"
+          # (RECONFIGURE_EACH_BOOT, data seeding). Set to that merge's sha- tag once CI
+          # publishes it; never :latest.
+          image: ghcr.io/jesseframework/hubmail-core:SET-AFTER-PHASE2-MERGE
+          envFrom:
+            - configMapRef: {name: hubmail-config}
+            - secretRef: {name: hubmail-secrets}
+          ports:
+            - {name: https, containerPort: 8443}
+            - {name: admin, containerPort: 9443}
+            - {name: smtp, containerPort: 2525}
+            - {name: submission, containerPort: 2587}
+            - {name: smtps, containerPort: 2465}
+            - {name: imaps, containerPort: 2993}
+            - {name: pop3s, containerPort: 2995}
+          # tcp probes: exec probes are rejected by this cluster's runtime
+          startupProbe:
+            tcpSocket: {port: 9443}
+            periodSeconds: 10
+            failureThreshold: 60        # first boot runs full setup (several minutes)
+          readinessProbe:
+            tcpSocket: {port: 8443}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: 2525}
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests: {cpu: 500m, memory: 2Gi}
+            limits: {memory: 4Gi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/gromox, subPath: gromox}
+            - {name: data, mountPath: /var/spool/postfix, subPath: postfix-spool}
+            - {name: data, mountPath: /var/lib/grommunio-admin-api, subPath: admin-api}
+            - {name: data, mountPath: /var/lib/grommunio-dav, subPath: dav}
+            - {name: data, mountPath: /var/lib/grommunio-web, subPath: web}
+            - {name: data, mountPath: /var/lib/grommunio-antispam, subPath: antispam}
+        - name: mail-backup
+          image: alpine:3.20
+          command: ["sh", "/scripts/loop.sh"]
+          envFrom: [{secretRef: {name: backup-s3}}]
+          env: [{name: AWS_DEFAULT_REGION, value: us-east-1}]
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /data/gromox, subPath: gromox}
+            - {name: mail-backup-scripts, mountPath: /scripts}
+            - {name: backup-work, mountPath: /work}
+            - {name: backup-status, mountPath: /work-status}
+      volumes:
+        - {name: mail-backup-scripts, configMap: {name: mail-backup}}
+        - {name: backup-work, emptyDir: {sizeLimit: 40Gi}}
+        - {name: backup-status, emptyDir: {}}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: hubmail-replicated
+        resources: {requests: {storage: 20Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: hubmail-core, namespace: hubmail-staging}
+spec:
+  selector: {app: hubmail-core}
+  ports:
+    - {name: https, port: 443, targetPort: 8443}
+    - {name: admin, port: 9443, targetPort: 9443}
+    - {name: smtp, port: 25, targetPort: 2525}
+    - {name: submission, port: 587, targetPort: 2587}
+    - {name: smtps, port: 465, targetPort: 2465}
+    - {name: imaps, port: 993, targetPort: 2993}
+    - {name: pop3s, port: 995, targetPort: 2995}

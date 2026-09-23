@@ -107,6 +107,15 @@ RUN chmod +x /home/docker-entrypoint.sh
 COPY gromox-core/supervisord.conf /etc/supervisord.conf
 COPY gromox-core/supervisor.d /etc/supervisor.d
 
+# HubMail: snapshot the package-installed layout of every data directory. On k3s these
+# are mounted from fresh (empty) volumes, which would hide it; docker-entrypoint.sh
+# restores a directory from its snapshot when the mounted one is empty.
+RUN mkdir -p /usr/share/hubmail/seed && \
+    for d in /var/lib/gromox /var/spool/postfix /var/lib/grommunio-admin-api /var/lib/grommunio-dav \
+             /var/lib/grommunio-web /var/lib/grommunio-antispam; do \
+      [ -d "$d" ] && tar -C / -cpf "/usr/share/hubmail/seed/$(echo "${d#/}" | tr / _).tar" "${d#/}"; \
+    done; ls -l /usr/share/hubmail/seed
+
 LABEL org.opencontainers.image.title="hubmail-core" \
       org.opencontainers.image.description="HubMail: grommunio groupware core with HubMail patches" \
       org.opencontainers.image.source="https://github.com/jesseframework/hubmail-container" \

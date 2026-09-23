@@ -1,0 +1,47 @@
+# Nightly mailbox backup, run by the mail-backup sidecar in the hubmail-core pod (the
+# mailbox volume is ReadWriteOnce, so the backup must run where it is mounted).
+# SQLite stores are copied with sqlite3 .backup (consistent while gromox is writing);
+# everything else (content files, which are immutable once written) is copied after,
+# so every file a copied store references is present in the archive.
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: mail-backup, namespace: hubmail-staging}
+data:
+  backup.sh: |
+    #!/bin/sh
+    set -eu
+    SRC=/data/gromox
+    WORK=/work/gromox
+    export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+    EP="$BACKUP_S3_ENDPOINT"; case "$EP" in http*) ;; *) EP="https://$EP" ;; esac
+    BASE="s3://$BACKUP_S3_BUCKET/hubmail-staging/mail"
+    TS=$(date -u +%Y%m%d-%H%M%S)
+    rm -rf /work/* && mkdir -p "$WORK"
+    stores=0
+    find "$SRC" -type f -name '*.sqlite3' | while read -r f; do
+      rel="${f#$SRC/}"; mkdir -p "$WORK/$(dirname "$rel")"
+      sqlite3 "$f" ".timeout 30000" ".backup '$WORK/$rel'"
+    done
+    stores=$(find "$WORK" -type f -name '*.sqlite3' | wc -l)
+    (cd "$SRC" && find . -type f ! -name '*.sqlite3' ! -name '*.sqlite3-wal' ! -name '*.sqlite3-shm' -print0 | \
+      tar --null -T - -cf - | tar -C "$WORK" -xf -)
+    tar -C /work -czf /work/gromox.tar.gz gromox
+    (cd /work && sha256sum gromox.tar.gz > SHA256SUMS)
+    echo "stores: $stores, archive: $(du -h /work/gromox.tar.gz | cut -f1)"
+    aws --endpoint-url "$EP" s3 cp /work/gromox.tar.gz "$BASE/$TS/gromox.tar.gz" --only-show-errors
+    aws --endpoint-url "$EP" s3 cp /work/SHA256SUMS "$BASE/$TS/SHA256SUMS" --only-show-errors
+    aws --endpoint-url "$EP" s3 ls "$BASE/" | awk '/PRE/ {print $2}' | sort | head -n -14 | while read -r old; do
+      aws --endpoint-url "$EP" s3 rm "$BASE/$old" --recursive --only-show-errors || echo "could not prune $old"
+    done
+    rm -rf /work/*
+    echo "mail backup complete: $BASE/$TS"
+  loop.sh: |
+    #!/bin/sh
+    # Runs backup.sh daily at 03:45 UTC. Writes /work-status/last-success for alerting.
+    apk add --no-cache aws-cli sqlite tar gzip coreutils findutils >/dev/null
+    while true; do
+      now=$(date -u +%s); next=$(date -u -d "$(date -u +%Y-%m-%d) 03:45" +%s)
+      [ "$next" -le "$now" ] && next=$((next + 86400))
+      sleep $((next - now))
+      if sh /scripts/backup.sh; then date -u +%s > /work-status/last-success; else echo "mail backup FAILED"; fi
+    done

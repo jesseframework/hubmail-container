@@ -1,0 +1,41 @@
+# Simulates how k3s runs the core: no /etc volumes (every recreate = fresh filesystem),
+# setup re-runs each boot, only data directories persist. Used to prove that a recreate
+# keeps domains, users and mail.
+#   docker compose -f hubmail/compose.k8s-sim.yml up -d
+#   docker compose -f hubmail/compose.k8s-sim.yml up -d --force-recreate hubmail-core
+name: hubmail-k8s-sim
+
+services:
+  gromox-db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: Lu3s3WmFxXghtLwJnuqN
+      MARIADB_DATABASE: grommunio
+      MARIADB_USER: grommunio
+      MARIADB_PASSWORD: Lu3s3WmFxXghtLwJnuqN
+    volumes: [db:/var/lib/mysql]
+    healthcheck:
+      test: mariadb --host=localhost --user=$${MARIADB_USER} --password=$${MARIADB_PASSWORD} -e 'SELECT 1;'
+      interval: 10s
+      retries: 10
+
+  hubmail-core:
+    image: ${HUBMAIL_IMAGE:-hubmail-core:local}
+    platform: linux/amd64
+    env_file: test.env
+    environment:
+      RECONFIGURE_EACH_BOOT: "true"
+      X500: ihubmailsim01
+      ENABLE_CHAT: "false"
+      CLEAR_DBS: "true"          # deliberately left on: must NOT drop the populated DB
+    volumes:   # nocopy: start empty like a k3s PVC (Docker would otherwise pre-fill from the image)
+      - {type: volume, source: gromox, target: /var/lib/gromox, volume: {nocopy: true}}
+      - {type: volume, source: admin-api, target: /var/lib/grommunio-admin-api, volume: {nocopy: true}}
+      - {type: volume, source: postfix-spool, target: /var/spool/postfix, volume: {nocopy: true}}
+    ports:
+      - "9443:9443"
+      - "8443:8443"
+    depends_on:
+      gromox-db: {condition: service_healthy}
+
+volumes: {db: {}, gromox: {}, admin-api: {}, postfix-spool: {}}

@@ -1,0 +1,42 @@
+# Galera: three synchronous MariaDB nodes, one per db node, for the grommunio directory
+# (orgs, domains, users, aliases). Any one node can fail without losing writes.
+# Clients use the hubmail-db-primary Service (single writer, fails over automatically).
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: MariaDB
+metadata:
+  name: hubmail-db
+  namespace: hubmail-staging
+spec:
+  image: mariadb:11.4.9     # 11.4 LTS
+  rootPasswordSecretKeyRef: {name: hubmail-db-credentials, key: root-password}
+  username: grommunio
+  passwordSecretKeyRef: {name: hubmail-db-credentials, key: password}
+  database: grommunio
+  replicas: 3
+  galera:
+    enabled: true
+  storage:
+    size: 10Gi
+    storageClassName: local-path     # Galera replicates itself; no need for DRBD underneath
+  affinity:
+    antiAffinityEnabled: true
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: [boca-k3-db-node1, boca-k3-db-node2, boca-k3-db-node3]
+  myCnf: |
+    [mariadb]
+    bind-address=*
+    default_storage_engine=InnoDB
+    binlog_format=row
+    innodb_autoinc_lock_mode=2
+    max_allowed_packet=256M
+    character-set-server=utf8mb4
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}
+  metrics:
+    enabled: true

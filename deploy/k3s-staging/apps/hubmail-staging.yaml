@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hubmail-staging
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea_admin/gitops.git
+    targetRevision: HEAD
+    path: manifests/hubmail-staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hubmail-staging
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}   # prune off: never let Argo delete mailbox PVCs
+    syncOptions: [CreateNamespace=true]
