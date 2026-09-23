@@ -5,10 +5,10 @@ apiVersion: v1
 kind: ConfigMap
 metadata: {name: hubmail-config, namespace: hubmail-staging}
 data:
-  FQDN: mail-staging.hostzones.com
-  ORIGFQDN: mail-staging.hostzones.com
-  DOMAIN: hostzones.com
-  ORIGDOMAIN: hostzones.com
+  FQDN: mail-staging.hostzones.net
+  ORIGFQDN: mail-staging.hostzones.net
+  DOMAIN: hostzones.net
+  ORIGDOMAIN: hostzones.net
   ORGANIZATION: HubMail
   TIMEZONE: America/Jamaica
   MYSQL_HOST: hubmail-db-primary
