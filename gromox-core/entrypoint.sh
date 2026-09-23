@@ -101,8 +101,9 @@ echo "{ \"mailWebAddress\": \"https://${FQDN}/web\", \"rspamdWebAddress\": \"htt
 
 if [[ $INSTALLVALUE == *"chat"* ]] ; then
 
-    echo "drop database if exists ${CHAT_MYSQL_DB}; \
-          create database ${CHAT_MYSQL_DB};" | mysql -h"${CHAT_MYSQL_HOST}" -u"${CHAT_MYSQL_USER}" -p"${CHAT_MYSQL_PASS}" "${CHAT_MYSQL_DB}" >/dev/null 2>&1
+    # HubMail: create the chat DB if absent, NEVER drop it (persist chat across restarts).
+    echo "create database if not exists ${CHAT_MYSQL_DB};" | mysql -h"${CHAT_MYSQL_HOST}" -u"${CHAT_MYSQL_USER}" -p"${CHAT_MYSQL_PASS}" >/dev/null 2>&1
+    CHAT_HAS_TABLES=$(mysql -h"${CHAT_MYSQL_HOST}" -u"${CHAT_MYSQL_USER}" -p"${CHAT_MYSQL_PASS}" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${CHAT_MYSQL_DB}'" 2>/dev/null)
 
   CHAT_DB_CON="${CHAT_MYSQL_USER}:${CHAT_MYSQL_PASS}@tcp\(${CHAT_MYSQL_HOST}:3306\)\/${CHAT_MYSQL_DB}?charset=utf8mb4,utf8\&readTimeout=30s\&writeTimeout=30s"
   sed -i 's#^.*"DataSource":.*#        "DataSource": "'${CHAT_DB_CON}'",#g' "${CHAT_CONFIG}"
@@ -113,24 +114,22 @@ if [[ $INSTALLVALUE == *"chat"* ]] ; then
   chown -R grochat:grochat "/etc/grommunio-chat/" "/usr/share/grommunio-chat/logs" "/usr/share/grommunio-chat/config" "/var/log/grommunio-chat" "/var/lib/grommunio-chat/"
   chmod 644 ${CHAT_CONFIG}
 
-  # Temporarily start chat in background for admin user creation
-  su -s /bin/bash -c "/usr/bin/grommunio-chat --config ${CHAT_CONFIG}" grochat &
-  CHAT_PID=$!
-
-  # Wait for the grommunio-chat unix socket
-  for n in $(seq 1 20) ; do
-    [ -e "/var/tmp/grommunio-chat_local.socket" ] && break
-    sleep 3
-  done
-
-  pushd /usr/share/grommunio-chat/ || return
-    MMCTL_LOCAL_SOCKET_PATH=/var/tmp/grommunio-chat_local.socket bin/grommunio-chat-ctl --local user create --email admin@localhost --username admin --password "${CHAT_ADMIN_PASS}" --system-admin >>"${LOGFILE}" 2>&1
-  popd || return
-
-  # Stop temporary chat instance
-  kill $CHAT_PID 2>/dev/null || true
-  wait $CHAT_PID 2>/dev/null || true
-  rm -f /var/tmp/grommunio-chat_local.socket
+  # HubMail: only bootstrap the schema + admin user on first init (empty chat DB).
+  if [ "${CHAT_HAS_TABLES:-0}" = "0" ]; then
+    # Temporarily start chat in background for schema migration + admin user creation
+    su -s /bin/bash -c "/usr/bin/grommunio-chat --config ${CHAT_CONFIG}" grochat &
+    CHAT_PID=$!
+    for n in $(seq 1 20) ; do
+      [ -e "/var/tmp/grommunio-chat_local.socket" ] && break
+      sleep 3
+    done
+    pushd /usr/share/grommunio-chat/ || return
+      MMCTL_LOCAL_SOCKET_PATH=/var/tmp/grommunio-chat_local.socket bin/grommunio-chat-ctl --local user create --email admin@localhost --username admin --password "${CHAT_ADMIN_PASS}" --system-admin >>"${LOGFILE}" 2>&1
+    popd || return
+    kill $CHAT_PID 2>/dev/null || true
+    wait $CHAT_PID 2>/dev/null || true
+    rm -f /var/tmp/grommunio-chat_local.socket
+  fi
 
   generate_admin_chat_conf "/etc/grommunio-admin-api/conf.d/chat.yaml"
 
