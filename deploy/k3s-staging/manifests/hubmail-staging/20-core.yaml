@@ -22,6 +22,8 @@ data:
   CHAT_MYSQL_HOST: hubmail-db-primary
   CHAT_MYSQL_USER: grochat
   CHAT_MYSQL_DB: grochat
+  MEET_SERVER: https://join.hubconnect.me/
+  MEET_ENABLE: "true"
   ENABLE_ARCHIVE: "false"
   ENABLE_OFFICE: "false"
   ENABLE_FILES: "false"
@@ -66,7 +68,7 @@ spec:
           # Built natively on .80 from master ebad08d, pushed to GHCR 2026-09-22.
           # Pinned by digest (immutable); ghcr.io/jesseframework/hubmail-core:sha-ebad08d
           # is the same image.
-          image: ghcr.io/jesseframework/hubmail-core@sha256:e5e2d208eeaa11aba90785a9771a07d162114730dbcdbe437117c0856cf294f5
+          image: ghcr.io/jesseframework/hubmail-core@sha256:47567b24c4710108061366d0bc7f2835cd0f3618d83af03f2c6c27fee0452a38
           envFrom:
             - configMapRef: {name: hubmail-config}
             - secretRef: {name: hubmail-secrets}
