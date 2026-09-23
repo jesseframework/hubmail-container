@@ -18,7 +18,10 @@ data:
   RECONFIGURE_EACH_BOOT: "true"
   X500: i6ab33865          # fixed forever: written into every mailbox's address-book entries
   CLEAR_DBS: "false"
-  ENABLE_CHAT: "false"
+  ENABLE_CHAT: "true"
+  CHAT_MYSQL_HOST: hubmail-db-primary
+  CHAT_MYSQL_USER: grochat
+  CHAT_MYSQL_DB: grochat
   ENABLE_ARCHIVE: "false"
   ENABLE_OFFICE: "false"
   ENABLE_FILES: "false"
@@ -63,7 +66,7 @@ spec:
           # Built natively on .80 from master ebad08d, pushed to GHCR 2026-09-22.
           # Pinned by digest (immutable); ghcr.io/jesseframework/hubmail-core:sha-ebad08d
           # is the same image.
-          image: ghcr.io/jesseframework/hubmail-core@sha256:1c5dce646d28b01d56ce606fc1d5b77ed05516b852c5819d88b0e0c7a3dfb300
+          image: ghcr.io/jesseframework/hubmail-core@sha256:e5e2d208eeaa11aba90785a9771a07d162114730dbcdbe437117c0856cf294f5
           envFrom:
             - configMapRef: {name: hubmail-config}
             - secretRef: {name: hubmail-secrets}
@@ -97,6 +100,7 @@ spec:
             - {name: data, mountPath: /var/lib/grommunio-dav, subPath: dav}
             - {name: data, mountPath: /var/lib/grommunio-web, subPath: web}
             - {name: data, mountPath: /var/lib/grommunio-antispam, subPath: antispam}
+            - {name: data, mountPath: /var/lib/grommunio-chat, subPath: chat}
         - name: mail-backup
           image: alpine:3.20
           command: ["sh", "/scripts/loop.sh"]
