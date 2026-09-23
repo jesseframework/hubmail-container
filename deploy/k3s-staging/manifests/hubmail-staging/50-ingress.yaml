@@ -25,6 +25,8 @@ spec:
   routes:
     - match: Host(`mail-staging.hostzones.net`)
       kind: Rule
+      middlewares:
+        - {name: xfp-https}
       services:
         - name: hubmail-core
           port: 443
