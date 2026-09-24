@@ -1,0 +1,30 @@
+# grommunio-chat (Mattermost) database in the same Galera cluster (single-writer via the
+# primary service). Password comes from hubmail-secrets key CHAT_MYSQL_PASS (Infisical).
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: Database
+metadata: {name: grochat, namespace: hubmail-staging}
+spec:
+  mariaDbRef: {name: hubmail-db}
+  characterSet: utf8mb4
+  collate: utf8mb4_general_ci
+  name: grochat
+---
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: User
+metadata: {name: grochat, namespace: hubmail-staging}
+spec:
+  mariaDbRef: {name: hubmail-db}
+  name: grochat
+  host: "%"
+  passwordSecretKeyRef: {name: hubmail-secrets, key: CHAT_MYSQL_PASS}
+---
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: Grant
+metadata: {name: grochat, namespace: hubmail-staging}
+spec:
+  mariaDbRef: {name: hubmail-db}
+  username: grochat
+  host: "%"
+  database: grochat
+  privileges: [ALL PRIVILEGES]
+  grantOption: false

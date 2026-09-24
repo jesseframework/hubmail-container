@@ -149,4 +149,34 @@ if [ -n "${MEET_SERVER}" ] && [ -f /etc/grommunio-web/config-meet.php ]; then
   fi
 fi
 
+# ── HubMail role selection ─────────────────────────────────────────
+# HUBMAIL_ROLE in {all,web,store,mx}; default "all" (single all-in-one pod, the
+# staging/small-deployment shape). Other roles enable only their programs, for the
+# phase-2b MX / web / store tier split. Cross-tier RPC (exmdb) is DB-routed via the
+# servers table + per-user homeserver; midb/event/timer hosts come from env below.
+ROLE="${HUBMAIL_ROLE:-all}"
+if [ "$ROLE" != "all" ]; then
+  case "$ROLE" in
+    web)   KEEP="crond redis saslauthd nginx php-fpm gromox-http grommunio-admin-api gromox-zcore gromox-imap gromox-pop3 grommunio-chat" ;;
+    store) KEEP="crond gromox-istore gromox-midb gromox-event gromox-timer" ;;
+    mx)    KEEP="crond saslauthd postfix gromox-delivery-queue gromox-delivery grommunio-antispam" ;;
+    *)     echo "FATAL: unknown HUBMAIL_ROLE=$ROLE" >&2; exit 1 ;;
+  esac
+  for f in /etc/supervisor.d/*.conf; do
+    prog="$(basename "$f" .conf)"
+    if printf ' %s ' "$KEEP" | grep -q " $prog "; then
+      sed -i 's/^autostart=false/autostart=true/' "$f"
+    else
+      sed -i 's/^autostart=true/autostart=false/' "$f"
+    fi
+  done
+fi
+
+# Store tier: exmdb (istore) must accept connections from the web/mx tiers.
+if [ "$ROLE" = "store" ]; then
+  touch /etc/gromox/exmdb_provider.cfg
+  grep -q '^listen_ip' /etc/gromox/exmdb_provider.cfg || echo 'listen_ip = ::' >> /etc/gromox/exmdb_provider.cfg
+  grep -q '^listen_port' /etc/gromox/exmdb_provider.cfg || echo 'listen_port = 5000' >> /etc/gromox/exmdb_provider.cfg
+fi
+
 exec /usr/local/bin/supervisord -n -c /etc/supervisord.conf
