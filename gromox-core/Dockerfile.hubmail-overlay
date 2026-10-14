@@ -33,6 +33,13 @@
 # the regression Overlay 1 repairs. (All the 2FA/login features live in the
 # admin-API + other components, NOT in admin-web, so replacing the admin-web
 # bundle below loses nothing.)
+# admin-web source-built image, declared as a named build stage. COPY --from
+# cannot expand a bare ARG, so we pin the image here instead. Override with
+# --build-arg ADMIN_WEB=ghcr.io/jesseframework/hubmail-admin-web@sha256:… for a
+# fully deterministic build; the default :prod tracks the latest green build.
+ARG ADMIN_WEB=ghcr.io/jesseframework/hubmail-admin-web:prod
+FROM ${ADMIN_WEB} AS adminweb
+
 FROM ghcr.io/jesseframework/hubmail-core@sha256:d110cc77c652ab705c2a9385c1307abf9af7b2bbecbf3af4b55a3f6bfcfdb91b
 
 # ── Overlay 1: admin-web (DNS Setup page + 2FA tab), built FROM SOURCE ────────
@@ -43,11 +50,10 @@ FROM ghcr.io/jesseframework/hubmail-core@sha256:d110cc77c652ab705c2a9385c1307abf
 # static bundle at /admin-web, with build-time guards that FAIL if either
 # feature is missing. We replace the base image's stock admin-web with it.
 #
-# Pin ADMIN_WEB to an immutable @sha256 for a fully deterministic build; the
-# default `:prod` tracks the latest green main build of the admin-web repo.
-ARG ADMIN_WEB=ghcr.io/jesseframework/hubmail-admin-web:prod
+# ADMIN_WEB (the source-built admin-web image) is pinned above as the `adminweb`
+# build stage; the default `:prod` tracks the latest green main build of the repo.
 RUN rm -rf /usr/share/grommunio-admin-web
-COPY --from=${ADMIN_WEB} /admin-web /usr/share/grommunio-admin-web
+COPY --from=adminweb /admin-web /usr/share/grommunio-admin-web
 RUN set -eux; \
     find /usr/share/grommunio-admin-web -name '._*' -delete 2>/dev/null || true; \
     # Defence in depth — both flagship features must be present (the admin-web
