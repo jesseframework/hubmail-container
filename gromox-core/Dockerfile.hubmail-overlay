@@ -14,7 +14,8 @@
 # the last known-good base image. Every rebuild from this file reproduces them
 # exactly, so they can no longer be lost by accident.
 #
-#   Overlay 1 — restore the grommunio-admin "DNS Setup" page.
+#   Overlay 1 — admin-web (DNS Setup page + 2FA tab), built from the
+#               hubmail-admin-web source repo (not a hand-made bundle).
 #   Overlay 2 — remove the "Gromox services" name from outbound mail, for good.
 #
 # All build inputs are pinned by IMMUTABLE @sha256 digest. Tags (e.g.
@@ -34,29 +35,25 @@
 # bundle below loses nothing.)
 FROM ghcr.io/jesseframework/hubmail-core@sha256:d110cc77c652ab705c2a9385c1307abf9af7b2bbecbf3af4b55a3f6bfcfdb91b
 
-# ── Overlay 1: restore the HubMail "DNS Setup" admin page ─────────────────────
-# The DNS Setup page is a recompiled grommunio-admin-web bundle: the SAME stock
-# RPM (grommunio-admin-web 5.0.0.79.ca385ab), rebuilt with our native "DNS
-# Setup" React page (shows SPF/DKIM/DMARC/MX records + a "Generate DKIM"
-# button; backend endpoints already live in the admin-API fork). The only
-# surviving artifact of that build is the dns-setup-20261011 image — its source
-# was built ad-hoc and never committed.
+# ── Overlay 1: admin-web (DNS Setup page + 2FA tab), built FROM SOURCE ────────
+# admin-web is now a committed, CICD-built repo — no more hand-made bundles:
+#   github.com/jesseframework/hubmail-admin-web → ghcr.io/jesseframework/hubmail-admin-web
+# That repo's Dockerfile builds the grommunio-admin-web fork from source (the
+# native "DNS Setup" page + the per-user Two-Factor admin tab) and ships the
+# static bundle at /admin-web, with build-time guards that FAIL if either
+# feature is missing. We replace the base image's stock admin-web with it.
 #
-#   TODO (proper durability): recover the grommunio-admin-web fork source that
-#   contains the DNS Setup component and build it here from source, instead of
-#   copying the prebuilt bundle out of a pinned image.
-#
-# Because both bundles are the same stock admin-web version, copying the
-# stock+DNS bundle over the stock one only ADDS the DNS page.
-COPY --from=ghcr.io/jesseframework/hubmail-core@sha256:6deacbc7914ee63f37c47310ba26cb199eb530680c229fc2d481bb1a494d402c \
-     /usr/share/grommunio-admin-web /usr/share/grommunio-admin-web
+# Pin ADMIN_WEB to an immutable @sha256 for a fully deterministic build; the
+# default `:prod` tracks the latest green main build of the admin-web repo.
+ARG ADMIN_WEB=ghcr.io/jesseframework/hubmail-admin-web:prod
+RUN rm -rf /usr/share/grommunio-admin-web
+COPY --from=${ADMIN_WEB} /admin-web /usr/share/grommunio-admin-web
 RUN set -eux; \
-    # The ad-hoc Mac build left AppleDouble metadata files (._*) in the bundle;
-    # strip them so they never ship.
-    find /usr/share/grommunio-admin-web -name '._*' -delete; \
-    # Guard: fail the build if the DNS Setup page is somehow missing, so a bad
-    # base image can never silently reintroduce the regression.
-    grep -rIl 'DNS Setup' /usr/share/grommunio-admin-web/static >/dev/null
+    find /usr/share/grommunio-admin-web -name '._*' -delete 2>/dev/null || true; \
+    # Defence in depth — both flagship features must be present (the admin-web
+    # repo already asserts this at its own build).
+    grep -rIl 'Domain DNS Setup' /usr/share/grommunio-admin-web/static >/dev/null; \
+    grep -rIl 'Two-Factor'       /usr/share/grommunio-admin-web/static >/dev/null
 
 # ── Overlay 2: remove "Gromox services" from the From header, permanently ─────
 # gromox fills an EMPTY sender display name from the gromox UNIX account's GECOS
